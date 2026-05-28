@@ -1,0 +1,186 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model with Clerk integration
+model User {
+  id        String     @id @default(cuid())
+  clerkId   String     @unique
+  email     String     @unique
+  name      String?
+  avatar    String?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  // Relations
+  workspaces    Workspace[]
+  notes         Note[]
+  uploadedFiles UploadedFile[]
+  aiHistory     AIHistory[]
+  activityLogs  ActivityLog[]
+
+  @@index([clerkId])
+  @@index([email])
+}
+
+// Workspace for organizing notes
+model Workspace {
+  id        String   @id @default(cuid())
+  name      String
+  icon      String?
+  color     String?  @default("#3B82F6")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  notes    Note[]
+  members  WorkspaceMember[]
+
+  @@index([userId])
+  @@fulltext([name])
+}
+
+// Workspace members for collaboration
+model WorkspaceMember {
+  id        String   @id @default(cuid())
+  role      String   @default("viewer") // owner, editor, viewer
+  createdAt DateTime @default(now())
+
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  userId String
+
+  @@unique([workspaceId, userId])
+  @@index([workspaceId])
+}
+
+// Note model with rich content support
+model Note {
+  id        String   @id @default(cuid())
+  title     String
+  slug      String
+  content   String?  @db.Text // JSON or Markdown content
+  excerpt   String?
+  tags      String[] @default([]) // Array of tags
+  isPinned  Boolean  @default(false)
+  isArchived Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  viewCount Int      @default(0)
+
+  // Relations
+  userId      String
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspaceId String
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  parentId    String?
+  parent      Note?       @relation("NoteHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Note[]      @relation("NoteHierarchy")
+
+  // AI and file relations
+  aiHistory     AIHistory[]
+  uploadedFiles UploadedFile[]
+  activityLogs  ActivityLog[]
+
+  @@unique([workspaceId, slug])
+  @@index([userId])
+  @@index([workspaceId])
+  @@index([createdAt])
+  @@index([isPinned])
+  @@fulltext([title, content])
+}
+
+// File uploads with metadata
+model UploadedFile {
+  id        String   @id @default(cuid())
+  filename  String
+  url       String   @db.Text
+  mimeType  String
+  size      Int
+  fileType  String   @default("text") // text, pdf, image, etc.
+  extractedText String? @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  noteId String?
+  note   Note?  @relation(fields: [noteId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([noteId])
+  @@index([createdAt])
+}
+
+// AI interaction history
+model AIHistory {
+  id        String   @id @default(cuid())
+  type      String   // summarize, improve, extract, chat, etc.
+  prompt    String   @db.Text
+  response  String   @db.Text
+  model     String   @default("gpt-4-turbo")
+  tokens    Int      @default(0)
+  duration  Int      @default(0) // in milliseconds
+  status    String   @default("success") // success, error, pending
+  error     String?
+  createdAt DateTime @default(now())
+
+  // Relations
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  noteId String?
+  note   Note?  @relation(fields: [noteId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([noteId])
+  @@index([createdAt])
+  @@index([type])
+}
+
+// Activity logging for audit trail
+model ActivityLog {
+  id        String   @id @default(cuid())
+  action    String   // created, updated, deleted, shared, etc.
+  entityType String  // Note, Workspace, File, etc.
+  entityId  String
+  changes   String?  @db.Text // JSON of changes
+  createdAt DateTime @default(now())
+
+  // Relations
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  noteId String?
+  note   Note?  @relation(fields: [noteId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([noteId])
+  @@index([createdAt])
+  @@index([entityType])
+}
+
+// Subscription/Billing (optional)
+model Subscription {
+  id        String   @id @default(cuid())
+  plan      String   @default("free") // free, pro, enterprise
+  status    String   @default("active")
+  startDate DateTime @default(now())
+  endDate   DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
